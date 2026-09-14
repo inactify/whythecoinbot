@@ -19,6 +19,8 @@ if (!BOT_TOKEN) {
 
 const bot = new Telegraf(BOT_TOKEN);
 
+let schedulingPaused = false;
+
 function isAdmin(ctx) {
   return ADMIN_USER_IDS.includes(String(ctx.from?.id));
 }
@@ -36,6 +38,26 @@ function adminOnly(handler) {
       await ctx.reply("❌ Something went wrong. Check the bot logs.");
     }
   };
+}
+
+/* =========================
+   CONTENT
+========================= */
+
+const DAILY_POSTS = [
+  "🤷🏾‍♂️ WHY OF THE DAY\n\nYou knew it was a bad idea.\n\nYou did it anyway.\n\nWHY? 😂\n\n🟡 $WHY — The Official Currency of Bad Decisions.",
+
+  "😂 DAILY REMINDER\n\nGood decisions are responsible.\n\nBad decisions are memorable.\n\nChoose wisely.\n\nOr don't.\n\nWHY? 🤷🏾‍♂️\n\n🟡 $WHY",
+
+  "🤔 BE HONEST...\n\nWhat's the dumbest thing you've ever spent money on?\n\nDon't lie. We won't judge. 😂\n\n🟡 $WHY",
+
+  "🔥 $WHY PHILOSOPHY\n\nYou don't need a reason.\n\nYou just need a WHY.\n\n😂🤷🏾‍♂️\n\nTHE OFFICIAL CURRENCY OF BAD DECISIONS.",
+
+  "🤷🏾‍♂️ QUICK QUESTION\n\nHave you ever said:\n\n\"This is probably a bad idea...\"\n\n…and then did it anyway?\n\nWelcome home. 😂\n\n$WHY"
+];
+
+function randomPost() {
+  return DAILY_POSTS[Math.floor(Math.random() * DAILY_POSTS.length)];
 }
 
 /* =========================
@@ -58,10 +80,11 @@ bot.help(async (ctx) => {
     "/status — Bot status\n" +
     "/chatid — Show this chat ID\n\n" +
     "ADMIN COMMANDS\n" +
-    "/post <message> — Post to the community\n" +
+    "/post <message> — Post to community\n" +
     "/pinwelcome — Post and pin welcome\n" +
-    "/pause — Pause scheduled posting\n" +
-    "/resume — Resume scheduled posting"
+    "/pause — Pause scheduled posts\n" +
+    "/resume — Resume scheduled posts\n" +
+    "/now — Post a random WHY message"
   );
 });
 
@@ -72,9 +95,7 @@ bot.help(async (ctx) => {
 bot.command(
   "chatid",
   adminOnly(async (ctx) => {
-    await ctx.reply(
-      `🆔 Chat ID:\n\n${ctx.chat.id}`
-    );
+    await ctx.reply(`🆔 Chat ID:\n\n${ctx.chat.id}`);
   })
 );
 
@@ -89,23 +110,21 @@ bot.command(
       "🟢 $WHY BOT IS ONLINE\n\n" +
       "Welcome system: ACTIVE\n" +
       "Admin controls: ACTIVE\n" +
-      "Render server: ACTIVE"
+      "Scheduled posting: " +
+      (schedulingPaused ? "PAUSED" : "ACTIVE")
     );
   })
 );
 
 /* =========================
-   POST
+   MANUAL POST
 ========================= */
 
 bot.command(
   "post",
   adminOnly(async (ctx) => {
     if (!GROUP_CHAT_ID) {
-      return ctx.reply(
-        "❌ GROUP_CHAT_ID is not configured yet.\n\n" +
-        "Use /chatid inside the group to get the group ID."
-      );
+      return ctx.reply("❌ GROUP_CHAT_ID is not configured.");
     }
 
     const text = ctx.message.text
@@ -113,16 +132,32 @@ bot.command(
       .trim();
 
     if (!text) {
-      return ctx.reply(
-        "Usage:\n\n/post Your message here"
-      );
+      return ctx.reply("Usage:\n\n/post Your message here");
     }
 
     await bot.telegram.sendMessage(GROUP_CHAT_ID, text);
 
-    await ctx.reply(
-      "✅ Posted to the $WHY community."
+    await ctx.reply("✅ Posted to the $WHY community.");
+  })
+);
+
+/* =========================
+   RANDOM POST
+========================= */
+
+bot.command(
+  "now",
+  adminOnly(async (ctx) => {
+    if (!GROUP_CHAT_ID) {
+      return ctx.reply("❌ GROUP_CHAT_ID is not configured.");
+    }
+
+    await bot.telegram.sendMessage(
+      GROUP_CHAT_ID,
+      randomPost()
     );
+
+    await ctx.reply("🔥 Random $WHY post published.");
   })
 );
 
@@ -154,9 +189,7 @@ bot.command(
   "pinwelcome",
   adminOnly(async (ctx) => {
     if (!GROUP_CHAT_ID) {
-      return ctx.reply(
-        "❌ GROUP_CHAT_ID is not configured yet."
-      );
+      return ctx.reply("❌ GROUP_CHAT_ID is not configured.");
     }
 
     const message = await bot.telegram.sendMessage(
@@ -172,9 +205,7 @@ bot.command(
       }
     );
 
-    await ctx.reply(
-      "📌 Welcome message posted and pinned."
-    );
+    await ctx.reply("📌 Welcome message posted and pinned.");
   })
 );
 
@@ -216,16 +247,11 @@ bot.on("new_chat_members", async (ctx) => {
    PAUSE / RESUME
 ========================= */
 
-let schedulingPaused = false;
-
 bot.command(
   "pause",
   adminOnly(async (ctx) => {
     schedulingPaused = true;
-
-    await ctx.reply(
-      "⏸ Scheduled posting has been paused."
-    );
+    await ctx.reply("⏸ Scheduled posting has been paused.");
   })
 );
 
@@ -233,21 +259,65 @@ bot.command(
   "resume",
   adminOnly(async (ctx) => {
     schedulingPaused = false;
-
-    await ctx.reply(
-      "▶️ Scheduled posting has been resumed."
-    );
+    await ctx.reply("▶️ Scheduled posting has been resumed.");
   })
 );
 
 /* =========================
-   SCHEDULE SYSTEM
+   AUTOMATIC POSTS
 ========================= */
 
-cron.schedule("0 12 * * *", async () => {
-  if (schedulingPaused) return;
+/*
+   Times use the server timezone.
+   For now:
+   09:00
+   14:00
+   20:00
+*/
 
-  console.log("🕛 $WHY scheduled system checked.");
+cron.schedule("0 9 * * *", async () => {
+  if (schedulingPaused || !GROUP_CHAT_ID) return;
+
+  try {
+    await bot.telegram.sendMessage(
+      GROUP_CHAT_ID,
+      randomPost()
+    );
+
+    console.log("☀️ Morning $WHY post published.");
+  } catch (error) {
+    console.error("Morning post error:", error);
+  }
+});
+
+cron.schedule("0 14 * * *", async () => {
+  if (schedulingPaused || !GROUP_CHAT_ID) return;
+
+  try {
+    await bot.telegram.sendMessage(
+      GROUP_CHAT_ID,
+      randomPost()
+    );
+
+    console.log("😂 Afternoon $WHY post published.");
+  } catch (error) {
+    console.error("Afternoon post error:", error);
+  }
+});
+
+cron.schedule("0 20 * * *", async () => {
+  if (schedulingPaused || !GROUP_CHAT_ID) return;
+
+  try {
+    await bot.telegram.sendMessage(
+      GROUP_CHAT_ID,
+      randomPost()
+    );
+
+    console.log("🌙 Evening $WHY post published.");
+  } catch (error) {
+    console.error("Evening post error:", error);
+  }
 });
 
 /* =========================
@@ -285,9 +355,7 @@ const server = http.createServer((req, res) => {
     "Content-Type": "text/plain"
   });
 
-  res.end(
-    "$WHY BOT IS ALIVE 🤷🏾‍♂️"
-  );
+  res.end("$WHY BOT IS ALIVE 🤷🏾‍♂️");
 });
 
 server.listen(PORT, "0.0.0.0", () => {
@@ -297,7 +365,7 @@ server.listen(PORT, "0.0.0.0", () => {
 });
 
 /* =========================
-   START TELEGRAM BOT
+   START BOT
 ========================= */
 
 bot.launch();
@@ -305,7 +373,7 @@ bot.launch();
 console.log("🤷🏾‍♂️ $WHY BOT IS RUNNING...");
 
 /* =========================
-   GRACEFUL SHUTDOWN
+   SHUTDOWN
 ========================= */
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
