@@ -1,200 +1,263 @@
-require("dotenv").config();
+require('dotenv').config();
 
-const http = require("http");
-const { Telegraf } = require("telegraf");
-const cron = require("node-cron");
+const { Telegraf } = require('telegraf');
+const cron = require('node-cron');
+const http = require('http');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || "")
-  .split(",")
-  .map((id) => id.trim())
+const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '')
+  .split(',')
+  .map(id => id.trim())
   .filter(Boolean);
 
-const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID || "";
+const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID;
 
 if (!BOT_TOKEN) {
-  console.error("❌ BOT_TOKEN is missing.");
+  console.error('❌ BOT_TOKEN is missing.');
+  process.exit(1);
+}
+
+if (!GROUP_CHAT_ID) {
+  console.error('❌ GROUP_CHAT_ID is missing.');
   process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
 
-let schedulingPaused = false;
+let paused = false;
+
+// =====================================================
+// $WHY CONTENT ENGINE
+// =====================================================
+
+const DAILY_POSTS = [
+  `🤷🏾‍♂️ WHY DID WE LAUNCH THIS COIN?
+
+Honestly...
+
+WHY NOT?
+
+🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.`,
+
+  `🔥 $WHY PHILOSOPHY
+
+You don't need a reason.
+
+You just need a WHY.
+
+😂🤷🏾‍♂️
+
+THE OFFICIAL CURRENCY OF BAD DECISIONS.`,
+
+  `🤦🏾‍♂️ YOU SAID YOU WERE DONE BUYING MEME COINS.
+
+Then you saw $WHY.
+
+Now you're here.
+
+WHY? 😂`,
+
+  `😂 SOME PEOPLE INVEST AFTER RESEARCH.
+
+OTHERS SEE A MEME AND SAY:
+
+"WHY NOT?"
+
+Welcome to $WHY.`,
+
+  `🤷🏾‍♂️ BAD DECISIONS.
+
+GREAT MEMES.
+
+BIGGER DREAMS.
+
+This is $WHY.
+
+THE OFFICIAL CURRENCY OF BAD DECISIONS.`
+];
+
+// =====================================================
+// HELPERS
+// =====================================================
 
 function isAdmin(ctx) {
   return ADMIN_USER_IDS.includes(String(ctx.from?.id));
 }
 
-function adminOnly(handler) {
-  return async (ctx) => {
-    if (!isAdmin(ctx)) {
-      return ctx.reply("⛔ This command is for $WHY admins only.");
-    }
-
-    try {
-      await handler(ctx);
-    } catch (error) {
-      console.error(error);
-      await ctx.reply("❌ Something went wrong. Check the bot logs.");
-    }
-  };
-}
-
-/* =========================
-   CONTENT
-========================= */
-
-const DAILY_POSTS = [
-  "🤷🏾‍♂️ WHY OF THE DAY\n\nYou knew it was a bad idea.\n\nYou did it anyway.\n\nWHY? 😂\n\n🟡 $WHY — The Official Currency of Bad Decisions.",
-
-  "😂 DAILY REMINDER\n\nGood decisions are responsible.\n\nBad decisions are memorable.\n\nChoose wisely.\n\nOr don't.\n\nWHY? 🤷🏾‍♂️\n\n🟡 $WHY",
-
-  "🤔 BE HONEST...\n\nWhat's the dumbest thing you've ever spent money on?\n\nDon't lie. We won't judge. 😂\n\n🟡 $WHY",
-
-  "🔥 $WHY PHILOSOPHY\n\nYou don't need a reason.\n\nYou just need a WHY.\n\n😂🤷🏾‍♂️\n\nTHE OFFICIAL CURRENCY OF BAD DECISIONS.",
-
-  "🤷🏾‍♂️ QUICK QUESTION\n\nHave you ever said:\n\n\"This is probably a bad idea...\"\n\n…and then did it anyway?\n\nWelcome home. 😂\n\n$WHY"
-];
-
 function randomPost() {
   return DAILY_POSTS[Math.floor(Math.random() * DAILY_POSTS.length)];
 }
 
-/* =========================
-   BASIC COMMANDS
-========================= */
+async function publishRandomPost() {
+  if (paused) {
+    console.log('⏸️ Automatic posting is paused.');
+    return;
+  }
+
+  try {
+    const post = randomPost();
+
+    await bot.telegram.sendMessage(GROUP_CHAT_ID, post);
+
+    console.log('🔥 Random $WHY post published.');
+  } catch (error) {
+    console.error('❌ Failed to publish post:', error.message);
+  }
+}
+
+// =====================================================
+// COMMANDS
+// =====================================================
 
 bot.start(async (ctx) => {
   await ctx.reply(
-    "🤷🏾‍♂️ WHY?\n\n" +
-    "Welcome to the official $WHY bot.\n\n" +
-    "🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.\n\n" +
-    "Memes • Chaos • Community"
+    `🤷🏾‍♂️ Welcome to $WHY.
+
+THE OFFICIAL CURRENCY OF BAD DECISIONS.
+
+You made the decision.
+You knew it was questionable.
+You did it anyway.
+
+WHY? 😂
+
+🔥 Memes
+🔥 Chaos
+🔥 Community`
   );
 });
 
 bot.help(async (ctx) => {
   await ctx.reply(
-    "🤖 $WHY BOT\n\n" +
-    "/start — Start the bot\n" +
-    "/status — Bot status\n" +
-    "/chatid — Show this chat ID\n\n" +
-    "ADMIN COMMANDS\n" +
-    "/post <message> — Post to community\n" +
-    "/pinwelcome — Post and pin welcome\n" +
-    "/pause — Pause scheduled posts\n" +
-    "/resume — Resume scheduled posts\n" +
-    "/now — Post a random WHY message"
+    `🤷🏾‍♂️ $WHY BOT
+
+Available commands:
+
+/start - Welcome message
+/help - Show commands
+/status - Check bot status
+/chatid - Show this chat ID
+
+Admin:
+/post <message> - Publish a message
+/now - Publish a random $WHY post
+/pinwelcome - Publish and pin the welcome post
+/pause - Pause automatic posts
+/resume - Resume automatic posts
+/schedule - Show posting schedule`
   );
 });
 
-/* =========================
-   CHAT ID
-========================= */
+bot.command('chatid', async (ctx) => {
+  await ctx.reply(`Chat ID: ${ctx.chat.id}`);
+});
 
-bot.command(
-  "chatid",
-  adminOnly(async (ctx) => {
-    await ctx.reply(`🆔 Chat ID:\n\n${ctx.chat.id}`);
-  })
-);
+bot.command('status', async (ctx) => {
+  await ctx.reply(
+    `🤷🏾‍♂️ $WHY BOT STATUS
 
-/* =========================
-   STATUS
-========================= */
+🟢 Bot: Online
+🟢 Posting: ${paused ? 'Paused' : 'Active'}
+🟢 Group: Connected
+🟢 Content Engine: Ready`
+  );
+});
 
-bot.command(
-  "status",
-  adminOnly(async (ctx) => {
-    await ctx.reply(
-      "🟢 $WHY BOT IS ONLINE\n\n" +
-      "Welcome system: ACTIVE\n" +
-      "Admin controls: ACTIVE\n" +
-      "Scheduled posting: " +
-      (schedulingPaused ? "PAUSED" : "ACTIVE")
-    );
-  })
-);
+bot.command('schedule', async (ctx) => {
+  await ctx.reply(
+    `⏰ $WHY POSTING SCHEDULE
 
-/* =========================
-   MANUAL POST
-========================= */
+🇳🇬 Nigeria Time (Africa/Lagos)
 
-bot.command(
-  "post",
-  adminOnly(async (ctx) => {
-    if (!GROUP_CHAT_ID) {
-      return ctx.reply("❌ GROUP_CHAT_ID is not configured.");
-    }
+🕘 9:00 AM
+🕑 2:00 PM
+🕗 8:00 PM
 
-    const text = ctx.message.text
-      .replace(/^\/post\s*/i, "")
-      .trim();
+Random $WHY content is automatically posted at these times.
 
-    if (!text) {
-      return ctx.reply("Usage:\n\n/post Your message here");
-    }
+Use /now for an immediate post.`
+  );
+});
 
-    await bot.telegram.sendMessage(GROUP_CHAT_ID, text);
+// =====================================================
+// ADMIN: POST CUSTOM MESSAGE
+// =====================================================
 
-    await ctx.reply("✅ Posted to the $WHY community.");
-  })
-);
+bot.command('post', async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply('🚫 Admin only.');
+  }
 
-/* =========================
-   RANDOM POST
-========================= */
+  const message = ctx.message.text.replace(/^\/post\s*/i, '').trim();
 
-bot.command(
-  "now",
-  adminOnly(async (ctx) => {
-    if (!GROUP_CHAT_ID) {
-      return ctx.reply("❌ GROUP_CHAT_ID is not configured.");
-    }
+  if (!message) {
+    return ctx.reply('Usage:\n/post Your message here');
+  }
 
-    await bot.telegram.sendMessage(
-      GROUP_CHAT_ID,
-      randomPost()
-    );
+  try {
+    await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
 
-    await ctx.reply("🔥 Random $WHY post published.");
-  })
-);
+    await ctx.reply('✅ Posted to the $WHY community.');
+  } catch (error) {
+    console.error('❌ /post error:', error.message);
+    await ctx.reply('❌ Failed to publish the message.');
+  }
+});
 
-/* =========================
-   WELCOME MESSAGE
-========================= */
+// =====================================================
+// ADMIN: RANDOM POST NOW
+// =====================================================
 
-const WELCOME_MESSAGE =
-  "🤷🏾‍♂️ WHY DID YOU JOIN?\n\n" +
-  "Welcome to the official $WHY community!\n\n" +
-  "🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.\n\n" +
-  "You made the decision.\n" +
-  "You knew it was questionable.\n" +
-  "You did it anyway.\n\n" +
-  "WHY? 😂\n\n" +
-  "🔥 Memes\n" +
-  "🔥 Chaos\n" +
-  "🔥 Community\n\n" +
-  "🚫 No scams\n" +
-  "🚫 No fake contract addresses\n" +
-  "🚫 No fake profit promises\n\n" +
-  "Welcome to $WHY.";
+bot.command('now', async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply('🚫 Admin only.');
+  }
 
-/* =========================
-   PIN WELCOME
-========================= */
+  try {
+    await publishRandomPost();
 
-bot.command(
-  "pinwelcome",
-  adminOnly(async (ctx) => {
-    if (!GROUP_CHAT_ID) {
-      return ctx.reply("❌ GROUP_CHAT_ID is not configured.");
-    }
+    await ctx.reply('🔥 Random $WHY post published.');
+  } catch (error) {
+    console.error('❌ /now error:', error.message);
+    await ctx.reply('❌ Failed to publish random post.');
+  }
+});
 
+// =====================================================
+// ADMIN: PIN WELCOME
+// =====================================================
+
+bot.command('pinwelcome', async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply('🚫 Admin only.');
+  }
+
+  const welcome = `🤷🏾‍♂️ WHY DID YOU JOIN?
+
+Welcome to the official $WHY community!
+
+🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.
+
+You made the decision.
+You knew it was questionable.
+You did it anyway.
+
+WHY? 😂
+
+🔥 Memes
+🔥 Chaos
+🔥 Community
+
+🚫 No scams
+🚫 No fake contract addresses
+🚫 No fake profit promises
+
+Welcome to $WHY.`;
+
+  try {
     const message = await bot.telegram.sendMessage(
       GROUP_CHAT_ID,
-      WELCOME_MESSAGE
+      welcome
     );
 
     await bot.telegram.pinChatMessage(
@@ -205,146 +268,128 @@ bot.command(
       }
     );
 
-    await ctx.reply("📌 Welcome message posted and pinned.");
-  })
-);
+    await ctx.reply('📌 Welcome message posted and pinned.');
+  } catch (error) {
+    console.error('❌ /pinwelcome error:', error.message);
+    await ctx.reply(
+      '❌ Could not pin the message. Make sure the bot is an admin with permission to pin messages.'
+    );
+  }
+});
 
-/* =========================
-   NEW MEMBER WELCOME
-========================= */
+// =====================================================
+// ADMIN: PAUSE
+// =====================================================
 
-bot.on("new_chat_members", async (ctx) => {
+bot.command('pause', async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply('🚫 Admin only.');
+  }
+
+  paused = true;
+
+  await ctx.reply(
+    '⏸️ Automatic $WHY posting is now PAUSED.'
+  );
+});
+
+// =====================================================
+// ADMIN: RESUME
+// =====================================================
+
+bot.command('resume', async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply('🚫 Admin only.');
+  }
+
+  paused = false;
+
+  await ctx.reply(
+    '▶️ Automatic $WHY posting is now ACTIVE.'
+  );
+});
+
+// =====================================================
+// NEW MEMBER WELCOME
+// =====================================================
+
+bot.on('new_chat_members', async (ctx) => {
   try {
-    const members = ctx.message.new_chat_members || [];
-
-    for (const member of members) {
-      if (member.is_bot && member.id === ctx.botInfo.id) {
-        continue;
-      }
-
-      const name = member.first_name || "friend";
+    for (const member of ctx.message.new_chat_members) {
+      if (member.is_bot) continue;
 
       await ctx.reply(
-        `🤷🏾‍♂️ WHY DID YOU DO IT, ${name}?\n\n` +
-        `Welcome to the $WHY community! 🟡\n\n` +
-        `THE OFFICIAL CURRENCY OF BAD DECISIONS.\n\n` +
-        `You made the decision.\n` +
-        `You knew it was questionable.\n` +
-        `You did it anyway.\n\n` +
-        `WHY? 😂\n\n` +
-        `🔥 Memes\n` +
-        `🔥 Chaos\n` +
-        `🔥 Community\n\n` +
-        `Have fun. Make memes.`
+        `🤷🏾‍♂️ Welcome, ${member.first_name}!
+
+You made the decision.
+You knew it was questionable.
+You joined anyway.
+
+WHY? 😂
+
+🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.
+
+🔥 Memes
+🔥 Chaos
+🔥 Community`
       );
     }
   } catch (error) {
-    console.error("Welcome error:", error);
+    console.error('❌ Welcome error:', error.message);
   }
 });
 
-/* =========================
-   PAUSE / RESUME
-========================= */
+// =====================================================
+// AUTOMATIC POSTING
+// AFRICA/LAGOS = NIGERIA TIME
+// =====================================================
 
-bot.command(
-  "pause",
-  adminOnly(async (ctx) => {
-    schedulingPaused = true;
-    await ctx.reply("⏸ Scheduled posting has been paused.");
-  })
+cron.schedule(
+  '0 9 * * *',
+  publishRandomPost,
+  {
+    timezone: 'Africa/Lagos'
+  }
 );
 
-bot.command(
-  "resume",
-  adminOnly(async (ctx) => {
-    schedulingPaused = false;
-    await ctx.reply("▶️ Scheduled posting has been resumed.");
-  })
+cron.schedule(
+  '0 14 * * *',
+  publishRandomPost,
+  {
+    timezone: 'Africa/Lagos'
+  }
 );
 
-/* =========================
-   AUTOMATIC POSTS
-========================= */
-
-/*
-   Times use the server timezone.
-   For now:
-   09:00
-   14:00
-   20:00
-*/
-
-cron.schedule("0 9 * * *", async () => {
-  if (schedulingPaused || !GROUP_CHAT_ID) return;
-
-  try {
-    await bot.telegram.sendMessage(
-      GROUP_CHAT_ID,
-      randomPost()
-    );
-
-    console.log("☀️ Morning $WHY post published.");
-  } catch (error) {
-    console.error("Morning post error:", error);
+cron.schedule(
+  '0 20 * * *',
+  publishRandomPost,
+  {
+    timezone: 'Africa/Lagos'
   }
-});
+);
 
-cron.schedule("0 14 * * *", async () => {
-  if (schedulingPaused || !GROUP_CHAT_ID) return;
+console.log('⏰ Automatic posting schedule loaded:');
+console.log('🇳🇬 09:00 Africa/Lagos');
+console.log('🇳🇬 14:00 Africa/Lagos');
+console.log('🇳🇬 20:00 Africa/Lagos');
 
-  try {
-    await bot.telegram.sendMessage(
-      GROUP_CHAT_ID,
-      randomPost()
-    );
-
-    console.log("😂 Afternoon $WHY post published.");
-  } catch (error) {
-    console.error("Afternoon post error:", error);
-  }
-});
-
-cron.schedule("0 20 * * *", async () => {
-  if (schedulingPaused || !GROUP_CHAT_ID) return;
-
-  try {
-    await bot.telegram.sendMessage(
-      GROUP_CHAT_ID,
-      randomPost()
-    );
-
-    console.log("🌙 Evening $WHY post published.");
-  } catch (error) {
-    console.error("Evening post error:", error);
-  }
-});
-
-/* =========================
-   TELEGRAM ERRORS
-========================= */
-
-bot.catch((error) => {
-  console.error("Telegram bot error:", error);
-});
-
-/* =========================
-   RENDER HTTP SERVER
-========================= */
+// =====================================================
+// RENDER HEALTH SERVER
+// =====================================================
 
 const PORT = process.env.PORT || 10000;
 
 const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
+  if (req.url === '/health') {
     res.writeHead(200, {
-      "Content-Type": "application/json"
+      'Content-Type': 'application/json'
     });
 
     res.end(
       JSON.stringify({
-        status: "ok",
-        bot: "$WHY",
-        message: "WHYTheCoinBot is running"
+        status: 'ok',
+        bot: 'WHYTheCoinBot',
+        paused
       })
     );
 
@@ -352,29 +397,39 @@ const server = http.createServer((req, res) => {
   }
 
   res.writeHead(200, {
-    "Content-Type": "text/plain"
+    'Content-Type': 'text/plain'
   });
 
-  res.end("$WHY BOT IS ALIVE 🤷🏾‍♂️");
+  res.end('$WHY Bot is alive 🤷🏾‍♂️');
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `🌐 HTTP server listening on 0.0.0.0:${PORT}`
-  );
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌐 HTTP server listening on 0.0.0.0:${PORT}`);
 });
 
-/* =========================
-   START BOT
-========================= */
+// =====================================================
+// START TELEGRAM BOT
+// =====================================================
 
-bot.launch();
+bot.launch()
+  .then(() => {
+    console.log('🤷🏾‍♂️ $WHY BOT IS RUNNING...');
+  })
+  .catch((error) => {
+    console.error('❌ Telegram bot failed to start:', error);
+    process.exit(1);
+  });
 
-console.log("🤷🏾‍♂️ $WHY BOT IS RUNNING...");
+// =====================================================
+// SHUTDOWN
+// =====================================================
 
-/* =========================
-   SHUTDOWN
-========================= */
+process.once('SIGINT', () => {
+  bot.stop('SIGINT');
+  server.close();
+});
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+process.once('SIGTERM', () => {
+  bot.stop('SIGTERM');
+  server.close();
+});
