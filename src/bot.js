@@ -4,6 +4,10 @@ const { Telegraf } = require('telegraf');
 const cron = require('node-cron');
 const http = require('http');
 
+// ===============================
+// ENVIRONMENT VARIABLES
+// ===============================
+
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '')
   .split(',')
@@ -12,108 +16,366 @@ const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '')
 
 const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID;
 
+// ===============================
+// BOT SETUP
+// ===============================
+
 if (!BOT_TOKEN) {
-  console.error('❌ BOT_TOKEN is missing.');
-  process.exit(1);
+  throw new Error('BOT_TOKEN is missing.');
 }
 
 if (!GROUP_CHAT_ID) {
-  console.error('❌ GROUP_CHAT_ID is missing.');
-  process.exit(1);
+  throw new Error('GROUP_CHAT_ID is missing.');
 }
 
 const bot = new Telegraf(BOT_TOKEN);
 
-let paused = false;
+// ===============================
+// BOT STATE
+// ===============================
 
-// =====================================================
-// $WHY CONTENT ENGINE
-// =====================================================
+let postingPaused = false;
 
-const DAILY_POSTS = [
-  `🤷🏾‍♂️ WHY DID WE LAUNCH THIS COIN?
+// ===============================
+// $WHY POST LIBRARY
+// ===============================
 
-Honestly...
+// 🌅 9 AM — MORNING / BRAND POSTS
 
-WHY NOT?
+const MORNING_POSTS = [
+  `WHY DID WE LAUNCH THIS COIN?
 
-🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.`,
+Honestly… WHY NOT? 🤷🏾‍♂️
 
-  `🔥 $WHY PHILOSOPHY
-
-You don't need a reason.
-
-You just need a WHY.
-
-😂🤷🏾‍♂️
+Welcome to $WHY.
 
 THE OFFICIAL CURRENCY OF BAD DECISIONS.`,
 
-  `🤦🏾‍♂️ YOU SAID YOU WERE DONE BUYING MEME COINS.
+  `WHY?
 
-Then you saw $WHY.
+Because “WHY NOT?” wasn't enough.
 
-Now you're here.
+So we made a coin. 😂
 
-WHY? 😂`,
+$WHY`,
 
-  `😂 SOME PEOPLE INVEST AFTER RESEARCH.
+  `GOOD DECISIONS ARE BORING.
 
-OTHERS SEE A MEME AND SAY:
+QUESTIONABLE DECISIONS ARE MEMORABLE.
 
-"WHY NOT?"
+$WHY 🤷🏾‍♂️`,
 
-Welcome to $WHY.`,
+  `We don't ask:
 
-  `🤷🏾‍♂️ BAD DECISIONS.
+“Is this a good idea?”
 
+We ask:
+
+“WHY NOT?” 🤷🏾‍♂️
+
+$WHY`,
+
+  `What is $WHY?
+
+A question.
+
+A meme.
+
+A community.
+
+A questionable decision.
+
+🤷🏾‍♂️ $WHY`,
+
+  `You don't need a reason.
+
+You need a WHY.
+
+🟡 $WHY`,
+
+  `$WHY PHILOSOPHY:
+
+Life is short.
+Make memories.
+Make memes.
+Question your decisions.
+
+WHY? 🤷🏾‍♂️`,
+
+  `BAD DECISIONS.
 GREAT MEMES.
-
 BIGGER DREAMS.
 
-This is $WHY.
+THIS IS $WHY.
 
 THE OFFICIAL CURRENCY OF BAD DECISIONS.`
 ];
 
-// =====================================================
-// HELPERS
-// =====================================================
+// 😂 2 PM — FUNNY / MEME POSTS
+
+const AFTERNOON_POSTS = [
+  `You said you're not buying another meme coin.
+
+Then you found $WHY.
+
+We know what happened next. 😂`,
+
+  `Some people make good decisions.
+
+Some make great decisions.
+
+And then there are $WHY holders. 🤷🏾‍♂️`,
+
+  `Your portfolio:
+
+📈 “I'm winning!”
+
+5 minutes later:
+
+📉 “WHY?”
+
+Welcome home. 😂`,
+
+  `Brain: “Think carefully.”
+
+You: “But it's a meme.”
+
+Brain: “WHY?”
+
+$WHY 🤷🏾‍♂️`,
+
+  `Imagine explaining to your future self why you bought $WHY.
+
+Future you:
+
+“WHY?” 😂`,
+
+  `Friend: “Do your research.”
+
+You: “I did.”
+
+Friend: “What did you find?”
+
+You:
+
+WHY? 😂`,
+
+  `Bought something I didn't need.
+
+Ate something I shouldn't.
+
+Joined another meme community.
+
+At least I found $WHY. 😂`,
+
+  `$WHY isn't for everyone.
+
+It's for people who have ever said:
+
+“This might be a bad idea…”
+
+…and did it anyway. 😂`,
+
+  `SCIENTIFIC STUDY:
+
+Researchers have discovered that every bad decision eventually leads to one question:
+
+WHY? 🤷🏾‍♂️`,
+
+  `Relationship advice:
+
+“Don't text them.”
+
+You: “Okay.”
+
+11:47 PM:
+
+“Hey…”
+
+WHY? 😂`,
+
+  `Your bank account after one unnecessary purchase:
+
+“We need to talk.”
+
+You:
+
+“WHY?” 😂`,
+
+  `Business idea: Terrible.
+
+Financial plan: Questionable.
+
+Decision-making: Could be better.
+
+Perfect conditions for $WHY. 🤷🏾‍♂️`,
+
+  `If bad decisions built character…
+
+we'd all be superheroes by now. 😂🤷🏾‍♂️
+
+$WHY`,
+
+  `Monday:
+
+“I'm going to make better decisions this week.”
+
+Tuesday:
+
+“$WHY?” 😂`
+];
+
+// 🌙 8 PM — EVENING / COMMUNITY POSTS
+
+const EVENING_POSTS = [
+  `Important announcement:
+
+We have absolutely no idea what we're doing.
+
+But we're doing it together.
+
+Welcome to $WHY. 😂`,
+
+  `$WHY CHECK-IN:
+
+Have you made a questionable decision today?
+
+A) Yes
+B) Absolutely
+C) WHY ARE YOU ASKING? 😂`,
+
+  `$WHY isn't for everyone.
+
+It's for the people who understand the joke.
+
+If that's you…
+
+Welcome home. 🤷🏾‍♂️`,
+
+  `DAILY REMINDER:
+
+Nobody forced you to join $WHY.
+
+You chose this.
+
+WHY? 🤷🏾‍♂️😂`,
+
+  `If you understand $WHY…
+
+You're one of us.
+
+If you don't…
+
+WHY ARE YOU STILL HERE? 😂`,
+
+  `$WHY COMMUNITY RULE #1:
+
+Don't pretend you always make good decisions.
+
+Rule #2:
+
+See Rule #1. 😂`,
+
+  `Tell us your most questionable decision.
+
+No judgment.
+
+This is the $WHY community. 😂👇🏾`,
+
+  `WHO TOLD YOU TO BUY THAT?
+
+Nobody.
+
+That's the problem. 😂`,
+
+  `COMMUNITY ROLL CALL:
+
+If you're here because you saw the name $WHY…
+
+Welcome.
+
+If you're here because you bought it…
+
+WHY? 😂🤷🏾‍♂️`
+];
+
+// ===============================
+// ALL POSTS
+// ===============================
+
+const ALL_POSTS = [
+  ...MORNING_POSTS,
+  ...AFTERNOON_POSTS,
+  ...EVENING_POSTS
+];
+
+// ===============================
+// RANDOM POST HELPER
+// ===============================
+
+function randomFrom(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+// ===============================
+// ADMIN CHECK
+// ===============================
 
 function isAdmin(ctx) {
-  return ADMIN_USER_IDS.includes(String(ctx.from?.id));
+  const userId = ctx.from?.id?.toString();
+
+  return userId && ADMIN_USER_IDS.includes(userId);
 }
 
-function randomPost() {
-  return DAILY_POSTS[Math.floor(Math.random() * DAILY_POSTS.length)];
-}
+// ===============================
+// PUBLISH POST
+// ===============================
 
-async function publishRandomPost() {
-  if (paused) {
-    console.log('⏸️ Automatic posting is paused.');
-    return;
+async function publishPost(post) {
+  if (postingPaused) {
+    console.log('Posting is currently paused.');
+    return false;
   }
 
   try {
-    const post = randomPost();
-
     await bot.telegram.sendMessage(GROUP_CHAT_ID, post);
 
-    console.log('🔥 Random $WHY post published.');
+    console.log('✅ Post published successfully.');
+
+    return true;
   } catch (error) {
     console.error('❌ Failed to publish post:', error.message);
+
+    return false;
   }
 }
 
-// =====================================================
-// COMMANDS
-// =====================================================
+// ===============================
+// PUBLISH RANDOM POST
+// ===============================
+
+async function publishRandomPost(postList) {
+  if (postingPaused) {
+    console.log('⏸️ Automatic posting is paused.');
+    return false;
+  }
+
+  const post = randomFrom(postList);
+
+  return await publishPost(post);
+}
+
+// ===============================
+// START COMMAND
+// ===============================
 
 bot.start(async (ctx) => {
   await ctx.reply(
-    `🤷🏾‍♂️ Welcome to $WHY.
+    `🤷🏾‍♂️ WHY DID YOU JOIN?
 
-THE OFFICIAL CURRENCY OF BAD DECISIONS.
+Welcome to the official $WHY community!
+
+🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.
 
 You made the decision.
 You knew it was questionable.
@@ -123,116 +385,170 @@ WHY? 😂
 
 🔥 Memes
 🔥 Chaos
-🔥 Community`
+🔥 Community
+
+Let's make some bad decisions together.`
   );
 });
 
-bot.help(async (ctx) => {
+// ===============================
+// HELP COMMAND
+// ===============================
+
+bot.command('help', async (ctx) => {
   await ctx.reply(
-    `🤷🏾‍♂️ $WHY BOT
+    `🤷🏾‍♂️ $WHY COMMUNITY BOT
 
 Available commands:
 
-/start - Welcome message
-/help - Show commands
-/status - Check bot status
-/chatid - Show this chat ID
+/start — Welcome message
+/help — Show this help
+/status — Bot status
+/chatid — Show group chat ID
+/schedule — Show posting schedule
 
-Admin:
-/post <message> - Publish a message
-/now - Publish a random $WHY post
-/pinwelcome - Publish and pin the welcome post
-/pause - Pause automatic posts
-/resume - Resume automatic posts
-/schedule - Show posting schedule`
+ADMIN COMMANDS:
+
+/post <message> — Post a custom message
+/now — Post a random $WHY message immediately
+/pinwelcome — Send and pin the welcome message
+/pause — Pause automatic posting
+/resume — Resume automatic posting
+
+🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.`
   );
 });
+
+// ===============================
+// CHAT ID COMMAND
+// ===============================
 
 bot.command('chatid', async (ctx) => {
-  await ctx.reply(`Chat ID: ${ctx.chat.id}`);
-});
-
-bot.command('status', async (ctx) => {
   await ctx.reply(
-    `🤷🏾‍♂️ $WHY BOT STATUS
+    `🆔 Chat ID:
 
-🟢 Bot: Online
-🟢 Posting: ${paused ? 'Paused' : 'Active'}
-🟢 Group: Connected
-🟢 Content Engine: Ready`
+${ctx.chat.id}`
   );
 });
+
+// ===============================
+// STATUS COMMAND
+// ===============================
+
+bot.command('status', async (ctx) => {
+  const status = postingPaused
+    ? '⏸️ Automatic posting: PAUSED'
+    : '🟢 Automatic posting: ACTIVE';
+
+  await ctx.reply(
+    `🤖 $WHY BOT STATUS
+
+${status}
+
+📚 Post library: ${ALL_POSTS.length} posts
+
+🌅 Morning: ${MORNING_POSTS.length}
+😂 Afternoon: ${AFTERNOON_POSTS.length}
+🌙 Evening: ${EVENING_POSTS.length}
+
+🟡 $WHY — The Official Currency of Bad Decisions.`
+  );
+});
+
+// ===============================
+// SCHEDULE COMMAND
+// ===============================
 
 bot.command('schedule', async (ctx) => {
   await ctx.reply(
-    `⏰ $WHY POSTING SCHEDULE
+    `🗓️ $WHY POSTING SCHEDULE
 
-🇳🇬 Nigeria Time (Africa/Lagos)
+🌅 9:00 AM
+Morning / Brand
+${MORNING_POSTS.length} possible posts
 
-🕘 9:00 AM
-🕑 2:00 PM
-🕗 8:00 PM
+😂 2:00 PM
+Funny / Meme
+${AFTERNOON_POSTS.length} possible posts
 
-Random $WHY content is automatically posted at these times.
+🌙 8:00 PM
+Evening / Community
+${EVENING_POSTS.length} possible posts
 
-Use /now for an immediate post.`
+Timezone:
+🇳🇬 Africa/Lagos
+
+Every scheduled post is randomly selected from its category.
+
+🤷🏾‍♂️ WHY?`
   );
 });
 
-// =====================================================
-// ADMIN: POST CUSTOM MESSAGE
-// =====================================================
+// ===============================
+// ADMIN: CUSTOM POST
+// ===============================
 
 bot.command('post', async (ctx) => {
   if (!isAdmin(ctx)) {
-    return ctx.reply('🚫 Admin only.');
+    return ctx.reply('❌ Admin only.');
   }
 
-  const message = ctx.message.text.replace(/^\/post\s*/i, '').trim();
+  const message = ctx.message.text.replace('/post', '').trim();
 
   if (!message) {
-    return ctx.reply('Usage:\n/post Your message here');
+    return ctx.reply(
+      `Usage:
+
+/post Your message here`
+    );
   }
 
-  try {
-    await bot.telegram.sendMessage(GROUP_CHAT_ID, message);
+  const success = await publishPost(
+    `WHY Community Bot:
 
+${message}`
+  );
+
+  if (success) {
     await ctx.reply('✅ Posted to the $WHY community.');
-  } catch (error) {
-    console.error('❌ /post error:', error.message);
-    await ctx.reply('❌ Failed to publish the message.');
+  } else {
+    await ctx.reply('❌ Failed to post.');
   }
 });
 
-// =====================================================
-// ADMIN: RANDOM POST NOW
-// =====================================================
+// ===============================
+// ADMIN: POST RANDOM MESSAGE NOW
+// ===============================
 
 bot.command('now', async (ctx) => {
   if (!isAdmin(ctx)) {
-    return ctx.reply('🚫 Admin only.');
+    return ctx.reply('❌ Admin only.');
   }
 
-  try {
-    await publishRandomPost();
+  const success = await publishPost(
+    randomFrom(ALL_POSTS)
+  );
 
-    await ctx.reply('🔥 Random $WHY post published.');
-  } catch (error) {
-    console.error('❌ /now error:', error.message);
-    await ctx.reply('❌ Failed to publish random post.');
+  if (success) {
+    await ctx.reply('✅ Random $WHY post published.');
+  } else {
+    await ctx.reply('❌ Failed to publish the post.');
   }
 });
 
-// =====================================================
+// ===============================
 // ADMIN: PIN WELCOME
-// =====================================================
+// ===============================
 
 bot.command('pinwelcome', async (ctx) => {
   if (!isAdmin(ctx)) {
-    return ctx.reply('🚫 Admin only.');
+    return ctx.reply('❌ Admin only.');
   }
 
-  const welcome = `🤷🏾‍♂️ WHY DID YOU JOIN?
+  try {
+    const message = await bot.telegram.sendMessage(
+      GROUP_CHAT_ID,
+      `🤷🏾‍♂️ WHY DID YOU JOIN?
 
 Welcome to the official $WHY community!
 
@@ -252,132 +568,146 @@ WHY? 😂
 🚫 No fake contract addresses
 🚫 No fake profit promises
 
-Welcome to $WHY.`;
-
-  try {
-    const message = await bot.telegram.sendMessage(
-      GROUP_CHAT_ID,
-      welcome
+Welcome to $WHY.`
     );
 
     await bot.telegram.pinChatMessage(
       GROUP_CHAT_ID,
       message.message_id,
       {
-        disable_notification: true
+        disable_notification: false
       }
     );
 
     await ctx.reply('📌 Welcome message posted and pinned.');
   } catch (error) {
-    console.error('❌ /pinwelcome error:', error.message);
+    console.error('Pin error:', error);
+
     await ctx.reply(
-      '❌ Could not pin the message. Make sure the bot is an admin with permission to pin messages.'
+      `❌ Could not pin the welcome message.
+
+Make sure the bot is an admin in the group and has permission to pin messages.`
     );
   }
 });
 
-// =====================================================
+// ===============================
 // ADMIN: PAUSE
-// =====================================================
+// ===============================
 
 bot.command('pause', async (ctx) => {
   if (!isAdmin(ctx)) {
-    return ctx.reply('🚫 Admin only.');
+    return ctx.reply('❌ Admin only.');
   }
 
-  paused = true;
+  postingPaused = true;
 
   await ctx.reply(
     '⏸️ Automatic $WHY posting is now PAUSED.'
   );
 });
 
-// =====================================================
+// ===============================
 // ADMIN: RESUME
-// =====================================================
+// ===============================
 
 bot.command('resume', async (ctx) => {
   if (!isAdmin(ctx)) {
-    return ctx.reply('🚫 Admin only.');
+    return ctx.reply('❌ Admin only.');
   }
 
-  paused = false;
+  postingPaused = false;
 
   await ctx.reply(
     '▶️ Automatic $WHY posting is now ACTIVE.'
   );
 });
 
-// =====================================================
+// ===============================
 // NEW MEMBER WELCOME
-// =====================================================
+// ===============================
 
 bot.on('new_chat_members', async (ctx) => {
   try {
-    for (const member of ctx.message.new_chat_members) {
-      if (member.is_bot) continue;
+    const newMembers = ctx.message.new_chat_members || [];
+
+    for (const member of newMembers) {
+      const firstName = member.first_name || 'Friend';
 
       await ctx.reply(
-        `🤷🏾‍♂️ Welcome, ${member.first_name}!
+        `🤷🏾‍♂️ WHY DID YOU JOIN, ${firstName.toUpperCase()}?
 
-You made the decision.
-You knew it was questionable.
-You joined anyway.
-
-WHY? 😂
+Welcome to the official $WHY community!
 
 🟡 THE OFFICIAL CURRENCY OF BAD DECISIONS.
 
+You made the decision.
+You knew it was questionable.
+You did it anyway.
+
+WHY? 😂
+
 🔥 Memes
 🔥 Chaos
-🔥 Community`
+🔥 Community
+
+🚫 No scams
+🚫 No fake contract addresses
+🚫 No fake profit promises
+
+Welcome to $WHY.`
       );
     }
   } catch (error) {
-    console.error('❌ Welcome error:', error.message);
+    console.error('Welcome error:', error.message);
   }
 });
 
-// =====================================================
+// ===============================
 // AUTOMATIC POSTING
-// AFRICA/LAGOS = NIGERIA TIME
-// =====================================================
+// ===============================
 
+// 9:00 AM — Morning / Brand
 cron.schedule(
   '0 9 * * *',
-  publishRandomPost,
+  async () => {
+    console.log('🌅 9 AM $WHY post running...');
+    await publishRandomPost(MORNING_POSTS);
+  },
   {
     timezone: 'Africa/Lagos'
   }
 );
 
+// 2:00 PM — Funny / Meme
 cron.schedule(
   '0 14 * * *',
-  publishRandomPost,
+  async () => {
+    console.log('😂 2 PM $WHY post running...');
+    await publishRandomPost(AFTERNOON_POSTS);
+  },
   {
     timezone: 'Africa/Lagos'
   }
 );
 
+// 8:00 PM — Evening / Community
 cron.schedule(
   '0 20 * * *',
-  publishRandomPost,
+  async () => {
+    console.log('🌙 8 PM $WHY post running...');
+    await publishRandomPost(EVENING_POSTS);
+  },
   {
     timezone: 'Africa/Lagos'
   }
 );
 
-console.log('⏰ Automatic posting schedule loaded:');
-console.log('🇳🇬 09:00 Africa/Lagos');
-console.log('🇳🇬 14:00 Africa/Lagos');
-console.log('🇳🇬 20:00 Africa/Lagos');
+// ===============================
+// HEALTH CHECK SERVER
+// ===============================
 
-// =====================================================
-// RENDER HEALTH SERVER
-// =====================================================
-
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
@@ -389,7 +719,9 @@ const server = http.createServer((req, res) => {
       JSON.stringify({
         status: 'ok',
         bot: 'WHYTheCoinBot',
-        paused
+        project: '$WHY',
+        postingPaused,
+        totalPosts: ALL_POSTS.length
       })
     );
 
@@ -404,32 +736,36 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🌐 HTTP server listening on 0.0.0.0:${PORT}`);
+  console.log(`🌐 Health server running on port ${PORT}`);
 });
 
-// =====================================================
-// START TELEGRAM BOT
-// =====================================================
+// ===============================
+// LAUNCH BOT
+// ===============================
 
 bot.launch()
   .then(() => {
-    console.log('🤷🏾‍♂️ $WHY BOT IS RUNNING...');
+    console.log('🤖 $WHY Community Bot is running!');
+    console.log(`📚 Total posts loaded: ${ALL_POSTS.length}`);
+    console.log('🌅 Morning posts:', MORNING_POSTS.length);
+    console.log('😂 Afternoon posts:', AFTERNOON_POSTS.length);
+    console.log('🌙 Evening posts:', EVENING_POSTS.length);
+    console.log('🕐 Timezone: Africa/Lagos');
   })
   .catch((error) => {
-    console.error('❌ Telegram bot failed to start:', error);
-    process.exit(1);
+    console.error('❌ Bot failed to launch:', error);
   });
 
-// =====================================================
-// SHUTDOWN
-// =====================================================
+// ===============================
+// GRACEFUL SHUTDOWN
+// ===============================
 
 process.once('SIGINT', () => {
+  console.log('🛑 Stopping bot...');
   bot.stop('SIGINT');
-  server.close();
 });
 
 process.once('SIGTERM', () => {
+  console.log('🛑 Stopping bot...');
   bot.stop('SIGTERM');
-  server.close();
 });
