@@ -9,6 +9,7 @@ const http = require('http');
 // ===============================
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
+
 const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '')
   .split(',')
   .map(id => id.trim())
@@ -35,6 +36,18 @@ const bot = new Telegraf(BOT_TOKEN);
 // ===============================
 
 let postingPaused = false;
+
+// ===============================
+// MEMBER STATISTICS
+// ===============================
+
+// These counters track events while the bot is running.
+// They reset if Render restarts the bot.
+
+let memberStats = {
+  joins: 0,
+  leaves: 0
+};
 
 // ===============================
 // $WHY POST LIBRARY
@@ -404,6 +417,7 @@ Available commands:
 /start — Welcome message
 /help — Show this help
 /status — Bot status
+/stats — Community statistics (Admin)
 /chatid — Show group chat ID
 /schedule — Show posting schedule
 
@@ -451,8 +465,58 @@ ${status}
 😂 Afternoon: ${AFTERNOON_POSTS.length}
 🌙 Evening: ${EVENING_POSTS.length}
 
+🟢 Joins recorded: ${memberStats.joins}
+🔴 Leaves recorded: ${memberStats.leaves}
+
 🟡 $WHY — The Official Currency of Bad Decisions.`
   );
+});
+
+// ===============================
+// COMMUNITY STATISTICS
+// ADMIN ONLY
+// ===============================
+
+bot.command('stats', async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply('❌ Admin only.');
+  }
+
+  try {
+    // Get the actual current Telegram group member count.
+    const currentMembers =
+      await bot.telegram.getChatMemberCount(GROUP_CHAT_ID);
+
+    const netMovement =
+      memberStats.joins - memberStats.leaves;
+
+    await ctx.reply(
+      `📊 $WHY COMMUNITY STATS
+
+👥 Current members: ${currentMembers}
+
+🟢 Joins recorded: ${memberStats.joins}
+🔴 Leaves recorded: ${memberStats.leaves}
+
+📈 Net movement since bot start: ${
+        netMovement >= 0 ? '+' : ''
+      }${netMovement}
+
+🤫 Leave notifications: HIDDEN
+🛡️ Statistics: ADMIN ONLY
+
+⚠️ Join/leave counters reset if the bot restarts.`
+    );
+  } catch (error) {
+    console.error('Stats error:', error.message);
+
+    await ctx.reply(
+      `❌ Could not retrieve the current member count.
+
+Recorded joins: ${memberStats.joins}
+Recorded leaves: ${memberStats.leaves}`
+    );
+  }
 });
 
 // ===============================
@@ -493,7 +557,9 @@ bot.command('post', async (ctx) => {
     return ctx.reply('❌ Admin only.');
   }
 
-  const message = ctx.message.text.replace('/post', '').trim();
+  const message = ctx.message.text
+    .replace('/post', '')
+    .trim();
 
   if (!message) {
     return ctx.reply(
@@ -510,7 +576,9 @@ ${message}`
   );
 
   if (success) {
-    await ctx.reply('✅ Posted to the $WHY community.');
+    await ctx.reply(
+      '✅ Posted to the $WHY community.'
+    );
   } else {
     await ctx.reply('❌ Failed to post.');
   }
@@ -530,9 +598,13 @@ bot.command('now', async (ctx) => {
   );
 
   if (success) {
-    await ctx.reply('✅ Random $WHY post published.');
+    await ctx.reply(
+      '✅ Random $WHY post published.'
+    );
   } else {
-    await ctx.reply('❌ Failed to publish the post.');
+    await ctx.reply(
+      '❌ Failed to publish the post.'
+    );
   }
 });
 
@@ -546,9 +618,10 @@ bot.command('pinwelcome', async (ctx) => {
   }
 
   try {
-    const message = await bot.telegram.sendMessage(
-      GROUP_CHAT_ID,
-      `🤷🏾‍♂️ WHY DID YOU JOIN?
+    const message =
+      await bot.telegram.sendMessage(
+        GROUP_CHAT_ID,
+        `🤷🏾‍♂️ WHY DID YOU JOIN?
 
 Welcome to the official $WHY community!
 
@@ -569,7 +642,7 @@ WHY? 😂
 🚫 No fake profit promises
 
 Welcome to $WHY.`
-    );
+      );
 
     await bot.telegram.pinChatMessage(
       GROUP_CHAT_ID,
@@ -579,7 +652,9 @@ Welcome to $WHY.`
       }
     );
 
-    await ctx.reply('📌 Welcome message posted and pinned.');
+    await ctx.reply(
+      '📌 Welcome message posted and pinned.'
+    );
   } catch (error) {
     console.error('Pin error:', error);
 
@@ -624,15 +699,20 @@ bot.command('resume', async (ctx) => {
 });
 
 // ===============================
-// NEW MEMBER WELCOME
+// NEW MEMBER WELCOME + JOIN STATS
 // ===============================
 
 bot.on('new_chat_members', async (ctx) => {
   try {
-    const newMembers = ctx.message.new_chat_members || [];
+    const newMembers =
+      ctx.message.new_chat_members || [];
+
+    // Record every new member.
+    memberStats.joins += newMembers.length;
 
     for (const member of newMembers) {
-      const firstName = member.first_name || 'Friend';
+      const firstName =
+        member.first_name || 'Friend';
 
       await ctx.reply(
         `🤷🏾‍♂️ WHY DID YOU JOIN, ${firstName.toUpperCase()}?
@@ -658,8 +738,41 @@ WHY? 😂
 Welcome to $WHY.`
       );
     }
+
+    console.log(
+      `🟢 ${newMembers.length} new member(s) joined.`
+    );
   } catch (error) {
-    console.error('Welcome error:', error.message);
+    console.error(
+      'Welcome/statistics error:',
+      error.message
+    );
+  }
+});
+
+// ===============================
+// HIDE MEMBER LEAVE MESSAGES
+// ===============================
+
+// Telegram sends a service message when someone leaves.
+// Delete it immediately so the departure is not displayed publicly.
+
+bot.on('left_chat_member', async (ctx) => {
+  try {
+    // Record the departure.
+    memberStats.leaves += 1;
+
+    // Delete the Telegram service message.
+    await ctx.deleteMessage();
+
+    console.log(
+      '🫥 Member departure recorded and hidden.'
+    );
+  } catch (error) {
+    console.error(
+      '❌ Could not delete member leave message:',
+      error.message
+    );
   }
 });
 
@@ -668,11 +781,17 @@ Welcome to $WHY.`
 // ===============================
 
 // 9:00 AM — Morning / Brand
+
 cron.schedule(
   '0 9 * * *',
   async () => {
-    console.log('🌅 9 AM $WHY post running...');
-    await publishRandomPost(MORNING_POSTS);
+    console.log(
+      '🌅 9 AM $WHY post running...'
+    );
+
+    await publishRandomPost(
+      MORNING_POSTS
+    );
   },
   {
     timezone: 'Africa/Lagos'
@@ -680,11 +799,17 @@ cron.schedule(
 );
 
 // 2:00 PM — Funny / Meme
+
 cron.schedule(
   '0 14 * * *',
   async () => {
-    console.log('😂 2 PM $WHY post running...');
-    await publishRandomPost(AFTERNOON_POSTS);
+    console.log(
+      '😂 2 PM $WHY post running...'
+    );
+
+    await publishRandomPost(
+      AFTERNOON_POSTS
+    );
   },
   {
     timezone: 'Africa/Lagos'
@@ -692,11 +817,17 @@ cron.schedule(
 );
 
 // 8:00 PM — Evening / Community
+
 cron.schedule(
   '0 20 * * *',
   async () => {
-    console.log('🌙 8 PM $WHY post running...');
-    await publishRandomPost(EVENING_POSTS);
+    console.log(
+      '🌙 8 PM $WHY post running...'
+    );
+
+    await publishRandomPost(
+      EVENING_POSTS
+    );
   },
   {
     timezone: 'Africa/Lagos'
@@ -707,37 +838,51 @@ cron.schedule(
 // HEALTH CHECK SERVER
 // ===============================
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+  process.env.PORT || 3000;
 
-const server = http.createServer((req, res) => {
-  if (req.url === '/health') {
+const server = http.createServer(
+  async (req, res) => {
+    if (req.url === '/health') {
+      res.writeHead(200, {
+        'Content-Type':
+          'application/json'
+      });
+
+      res.end(
+        JSON.stringify({
+          status: 'ok',
+          bot: 'WHYTheCoinBot',
+          project: '$WHY',
+          postingPaused,
+          totalPosts: ALL_POSTS.length,
+          joinsRecorded: memberStats.joins,
+          leavesRecorded: memberStats.leaves
+        })
+      );
+
+      return;
+    }
+
     res.writeHead(200, {
-      'Content-Type': 'application/json'
+      'Content-Type': 'text/plain'
     });
 
     res.end(
-      JSON.stringify({
-        status: 'ok',
-        bot: 'WHYTheCoinBot',
-        project: '$WHY',
-        postingPaused,
-        totalPosts: ALL_POSTS.length
-      })
+      '$WHY Bot is alive 🤷🏾‍♂️'
     );
-
-    return;
   }
+);
 
-  res.writeHead(200, {
-    'Content-Type': 'text/plain'
-  });
-
-  res.end('$WHY Bot is alive 🤷🏾‍♂️');
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🌐 Health server running on port ${PORT}`);
-});
+server.listen(
+  PORT,
+  '0.0.0.0',
+  () => {
+    console.log(
+      `🌐 Health server running on port ${PORT}`
+    );
+  }
+);
 
 // ===============================
 // LAUNCH BOT
@@ -745,27 +890,70 @@ server.listen(PORT, '0.0.0.0', () => {
 
 bot.launch()
   .then(() => {
-    console.log('🤖 $WHY Community Bot is running!');
-    console.log(`📚 Total posts loaded: ${ALL_POSTS.length}`);
-    console.log('🌅 Morning posts:', MORNING_POSTS.length);
-    console.log('😂 Afternoon posts:', AFTERNOON_POSTS.length);
-    console.log('🌙 Evening posts:', EVENING_POSTS.length);
-    console.log('🕐 Timezone: Africa/Lagos');
+    console.log(
+      '🤖 $WHY Community Bot is running!'
+    );
+
+    console.log(
+      `📚 Total posts loaded: ${ALL_POSTS.length}`
+    );
+
+    console.log(
+      '🌅 Morning posts:',
+      MORNING_POSTS.length
+    );
+
+    console.log(
+      '😂 Afternoon posts:',
+      AFTERNOON_POSTS.length
+    );
+
+    console.log(
+      '🌙 Evening posts:',
+      EVENING_POSTS.length
+    );
+
+    console.log(
+      '🕐 Timezone: Africa/Lagos'
+    );
+
+    console.log(
+      '🤫 Silent leave tracking: ACTIVE'
+    );
+
+    console.log(
+      '📊 Member statistics: ACTIVE'
+    );
   })
   .catch((error) => {
-    console.error('❌ Bot failed to launch:', error);
+    console.error(
+      '❌ Bot failed to launch:',
+      error
+    );
   });
 
 // ===============================
 // GRACEFUL SHUTDOWN
 // ===============================
 
-process.once('SIGINT', () => {
-  console.log('🛑 Stopping bot...');
-  bot.stop('SIGINT');
-});
+process.once(
+  'SIGINT',
+  () => {
+    console.log(
+      '🛑 Stopping bot...'
+    );
 
-process.once('SIGTERM', () => {
-  console.log('🛑 Stopping bot...');
-  bot.stop('SIGTERM');
-});
+    bot.stop('SIGINT');
+  }
+);
+
+process.once(
+  'SIGTERM',
+  () => {
+    console.log(
+      '🛑 Stopping bot...'
+    );
+
+    bot.stop('SIGTERM');
+  }
+);
